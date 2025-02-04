@@ -27,7 +27,7 @@ pip install -r requirements.txt
 
 Run the application:
 ```bash
-python gui.py
+python GIFWrap.py
 ```
 
 1. Click "Browse" to select your input video
