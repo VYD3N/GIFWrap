@@ -91,21 +91,40 @@ class GifConverterGUI:
         self.button_frame = ttk.Frame(self.main_frame)
         self.button_frame.grid(row=4, column=0, columnspan=2, pady=10)
         
-        # Regular convert button
+        # Custom size frame
+        self.custom_frame = ttk.Frame(self.button_frame)
+        self.custom_frame.grid(row=0, column=2, padx=5)
+        
+        self.custom_size = tk.StringVar(value="50")
+        self.custom_entry = ttk.Entry(
+            self.custom_frame,
+            textvariable=self.custom_size,
+            width=5
+        )
+        self.custom_entry.grid(row=0, column=0, padx=2)
+        ttk.Label(self.custom_frame, text="MB").grid(row=0, column=1)
+        
+        # Buttons
         self.convert_btn = ttk.Button(
             self.button_frame, 
-            text="Convert to GIF (15MB)", 
+            text="Create Full (15MB)", 
             command=self.start_conversion
         )
         self.convert_btn.grid(row=0, column=0, padx=5)
         
-        # Thumbnail convert button
         self.thumb_btn = ttk.Button(
             self.button_frame, 
-            text="Create Thumbnail (2MB)", 
+            text="Create Preview (2MB)", 
             command=self.start_thumbnail_conversion
         )
         self.thumb_btn.grid(row=0, column=1, padx=5)
+        
+        self.custom_btn = ttk.Button(
+            self.custom_frame,
+            text="Create Custom",
+            command=self.start_custom_conversion
+        )
+        self.custom_btn.grid(row=1, column=0, columnspan=2, pady=5)
         
         # Log area
         self.log_frame = ttk.LabelFrame(self.main_frame, text="Conversion Log", padding="5")
@@ -152,7 +171,11 @@ class GifConverterGUI:
             filetypes=[("GIF files", "*.gif")]
         )
         if filename:
-            # Store base path without suffix (will be added when conversion starts)
+            # Create directory if it doesn't exist
+            directory = os.path.dirname(filename)
+            if directory and not os.path.exists(directory):
+                os.makedirs(directory)
+            # Store base path without suffix
             base_path = os.path.splitext(filename)[0]
             self.output_path.set(base_path)
     
@@ -177,8 +200,10 @@ class GifConverterGUI:
         # Disable buttons during conversion
         self.convert_btn.state(['disabled'])
         self.thumb_btn.state(['disabled'])
+        self.custom_btn.state(['disabled'])
         self.browse_btn.state(['disabled'])
         self.save_btn.state(['disabled'])
+        self.custom_entry.state(['disabled'])
         
         # Clear log
         self.log_text.delete(1.0, tk.END)
@@ -208,8 +233,10 @@ class GifConverterGUI:
         # Disable buttons during conversion
         self.convert_btn.state(['disabled'])
         self.thumb_btn.state(['disabled'])
+        self.custom_btn.state(['disabled'])
         self.browse_btn.state(['disabled'])
         self.save_btn.state(['disabled'])
+        self.custom_entry.state(['disabled'])
         
         # Clear log
         self.log_text.delete(1.0, tk.END)
@@ -219,6 +246,48 @@ class GifConverterGUI:
         
         # Start conversion in separate thread
         thread = threading.Thread(target=self.convert_thumbnail)
+        thread.daemon = True
+        thread.start()
+    
+    def start_custom_conversion(self):
+        try:
+            size = int(self.custom_size.get())
+            if not 1 <= size <= 100:
+                self.status_var.set("Error: Size must be between 1 and 100 MB")
+                return
+        except ValueError:
+            self.status_var.set("Error: Please enter a valid number")
+            return
+
+        if not self.input_path.get():
+            self.status_var.set("Error: Please select an input video")
+            return
+        
+        if not self.output_path.get():
+            self.status_var.set("Error: Please select output location")
+            return
+        
+        # Add Custom suffix to output path
+        base_path = os.path.splitext(self.output_path.get())[0]
+        if not base_path.endswith(f'Sub{size}'):
+            self.output_path.set(f"{base_path}_Sub{size}.gif")
+        
+        # Disable buttons during conversion
+        self.convert_btn.state(['disabled'])
+        self.thumb_btn.state(['disabled'])
+        self.custom_btn.state(['disabled'])
+        self.browse_btn.state(['disabled'])
+        self.save_btn.state(['disabled'])
+        self.custom_entry.state(['disabled'])
+        
+        # Clear log
+        self.log_text.delete(1.0, tk.END)
+        
+        # Start progress bar
+        self.progress.start()
+        
+        # Start conversion in separate thread
+        thread = threading.Thread(target=lambda: self.convert_custom(size))
         thread.daemon = True
         thread.start()
     
@@ -252,8 +321,10 @@ class GifConverterGUI:
             # Re-enable buttons
             self.window.after(0, lambda: self.convert_btn.state(['!disabled']))
             self.window.after(0, lambda: self.thumb_btn.state(['!disabled']))
+            self.window.after(0, lambda: self.custom_btn.state(['!disabled']))
             self.window.after(0, lambda: self.browse_btn.state(['!disabled']))
             self.window.after(0, lambda: self.save_btn.state(['!disabled']))
+            self.window.after(0, lambda: self.custom_entry.state(['!disabled']))
             self.window.after(0, lambda: self.progress.stop())
             sys.stdout = sys.__stdout__
     
@@ -267,7 +338,7 @@ class GifConverterGUI:
                 def __init__(self, queue):
                     self.queue = queue
                 def write(self, message):
-                    if message.strip():
+                    if message.strip():  # Only queue non-empty messages
                         self.queue.put(message.strip())
                 def flush(self):
                     pass
@@ -287,10 +358,56 @@ class GifConverterGUI:
             # Re-enable buttons
             self.window.after(0, lambda: self.convert_btn.state(['!disabled']))
             self.window.after(0, lambda: self.thumb_btn.state(['!disabled']))
+            self.window.after(0, lambda: self.custom_btn.state(['!disabled']))
             self.window.after(0, lambda: self.browse_btn.state(['!disabled']))
             self.window.after(0, lambda: self.save_btn.state(['!disabled']))
+            self.window.after(0, lambda: self.custom_entry.state(['!disabled']))
             self.window.after(0, lambda: self.progress.stop())
             sys.stdout = sys.__stdout__
+    
+    def convert_custom(self, size_mb):
+        try:
+            self.update_status(f"Converting to {size_mb}MB...")
+            
+            # Update converter settings
+            original_target_min = self.converter.TARGET_MIN_BYTES
+            original_target_max = self.converter.TARGET_MAX_BYTES
+            original_target_min_mb = self.converter.TARGET_MIN_MB
+            original_target_max_mb = self.converter.TARGET_MAX_MB
+            
+            # Set new targets (0.99% margin)
+            target_min = size_mb * 0.99
+            target_max = size_mb * 0.999
+            self.converter.TARGET_MIN_MB = target_min
+            self.converter.TARGET_MAX_MB = target_max
+            self.converter.TARGET_MIN_BYTES = int(target_min * 1024 * 1024)
+            self.converter.TARGET_MAX_BYTES = int(target_max * 1024 * 1024)
+            
+            try:
+                # Run conversion
+                self.converter.convert_to_gif(self.input_path.get(), self.output_path.get())
+            finally:
+                # Restore original settings
+                self.converter.TARGET_MIN_BYTES = original_target_min
+                self.converter.TARGET_MAX_BYTES = original_target_max
+                self.converter.TARGET_MIN_MB = original_target_min_mb
+                self.converter.TARGET_MAX_MB = original_target_max_mb
+            
+            self.update_status("Custom Conversion Complete!")
+            
+        except Exception as e:
+            self.log_queue.put(f"Error: {str(e)}")
+            self.update_status(f"Error: {str(e)}")
+        
+        finally:
+            # Re-enable buttons
+            self.window.after(0, lambda: self.convert_btn.state(['!disabled']))
+            self.window.after(0, lambda: self.thumb_btn.state(['!disabled']))
+            self.window.after(0, lambda: self.custom_btn.state(['!disabled']))
+            self.window.after(0, lambda: self.browse_btn.state(['!disabled']))
+            self.window.after(0, lambda: self.save_btn.state(['!disabled']))
+            self.window.after(0, lambda: self.custom_entry.state(['!disabled']))
+            self.window.after(0, lambda: self.progress.stop())
     
     def run(self):
         self.window.mainloop()

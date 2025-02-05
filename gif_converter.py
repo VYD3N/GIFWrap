@@ -14,6 +14,7 @@ import cv2
 from sklearn.cluster import MiniBatchKMeans
 import imagehash
 from scipy import fftpack
+import shutil
 
 # Add this at the top to patch PIL.Image.ANTIALIAS
 if not hasattr(Image, 'ANTIALIAS'):
@@ -239,12 +240,15 @@ class GifConverter:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_output = os.path.join(temp_dir, "temp.gif")
             
-            # Binary search for dimensions
-            low_dim = self.MIN_DIMENSION
+            # Modify the binary search bounds
+            low_dim = self.MIN_DIMENSION  # Start from minimum dimension
             high_dim = max(video.w, video.h)
             
-            # Use analyzed dimension as starting point
-            current_dim = max(min(analysis['estimated_dimension'], high_dim), low_dim)
+            # Use analyzed dimension as starting point, but respect minimum
+            current_dim = max(
+                self.MIN_DIMENSION,
+                min(analysis['estimated_dimension'], high_dim)
+            )
             last_too_big = None
             last_too_small = None
             
@@ -273,7 +277,10 @@ class GifConverter:
                     if self.TARGET_MIN_BYTES <= size <= self.TARGET_MAX_BYTES:
                         best_settings = (current_width, current_height, fps)
                         if os.path.exists(temp_output):
-                            os.replace(temp_output, output_path)
+                            try:
+                                shutil.copy2(temp_output, output_path)
+                            except Exception as e:
+                                raise Exception(f"Failed to copy file to destination: {str(e)}")
                         break
                     elif size < self.TARGET_MIN_BYTES:
                         last_too_small = current_dim
