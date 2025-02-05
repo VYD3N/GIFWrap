@@ -10,6 +10,7 @@ A simple and efficient tool for converting videos to optimized GIFs with specifi
 - User-friendly GUI interface
 - Maintains aspect ratio
 - Automatic frame rate optimization
+- Custom size targets (1-100 MB)
 
 ## Installation
 
@@ -33,8 +34,9 @@ python GIFWrap.py
 1. Click "Browse" to select your input video
 2. Choose your output location
 3. Click either:
-   - "Convert to GIF (15MB)" for full-size GIFs (outputs as filename_Sub15.gif)
-   - "Create Thumbnail (2MB)" for smaller previews (outputs as filename_Sub2.gif)
+   - "Create Full (15MB)" for full-size GIFs (outputs as filename_Sub15.gif)
+   - "Create Preview (2MB)" for smaller previews (outputs as filename_Sub2.gif)
+   - "Create Custom" with size between 1-100 MB (outputs as filename_SubX.gif)
 
 The application will automatically optimize the resolution and frame rate to meet the target file size while maintaining quality.
 
