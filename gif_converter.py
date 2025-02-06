@@ -215,159 +215,246 @@ class GifConverter:
             'perceptual_difficulty': float(perceptual_difficulty)  # Ensure float
         }
 
+    def _optimize_video(self, input_path: str) -> str:
+        """Optimize any video format for GIF conversion"""
+        print("Optimizing video format...")
+        try:
+            # Create a temporary directory that will persist
+            temp_dir = tempfile.mkdtemp()
+            mp4_path = os.path.join(temp_dir, "temp.mp4")
+            
+            # Load video file
+            video = VideoFileClip(input_path)
+            
+            # Calculate optimal bitrate based on resolution
+            pixels = video.w * video.h
+            base_bitrate = '1000k'  # Default bitrate
+            if pixels > 1920 * 1080:
+                base_bitrate = '4000k'
+            elif pixels > 1280 * 720:
+                base_bitrate = '2500k'
+            elif pixels > 854 * 480:
+                base_bitrate = '1500k'
+            
+            # Write optimized MP4
+            video.write_videofile(
+                mp4_path,
+                codec='libx264',
+                audio=False,
+                verbose=False,
+                logger=None,
+                bitrate=base_bitrate,
+                preset='medium',
+                ffmpeg_params=[
+                    '-pix_fmt', 'yuv420p',
+                    '-movflags', '+faststart',
+                    '-tune', 'film',
+                    '-profile:v', 'main',
+                    '-level', '3.1',
+                    '-refs', '4',
+                    '-bf', '2',
+                    '-g', '30',
+                ]
+            )
+            video.close()
+            
+            return mp4_path, temp_dir  # Return both the file path and directory
+        except Exception as e:
+            if 'temp_dir' in locals() and os.path.exists(temp_dir):
+                try:
+                    shutil.rmtree(temp_dir)
+                except:
+                    pass
+            raise Exception(f"Error optimizing video: {str(e)}")
+
     def convert_to_gif(self, input_path: str, output_path: str = None) -> str:
         if not output_path:
             output_path = str(Path(input_path).with_suffix('.gif'))
 
-        video = VideoFileClip(input_path)
-        
-        # Get video analysis
-        analysis = self._analyze_video(video)
-        print(f"Video Analysis:")
-        print(f"Duration: {analysis['duration']:.2f}s")
-        print(f"Frame count: {analysis['frame_count']}")
-        print(f"Bytes per pixel: {analysis['bytes_per_pixel']:.6f}")
-        print(f"Estimated optimal dimension: {analysis['estimated_dimension']}px")
-        
-        # Calculate initial dimensions maintaining aspect ratio
-        aspect_ratio = video.w / video.h
-        
-        # Start with conservative settings
-        fps = self.MIN_FPS
-        best_settings = None
-        best_size = 0
-        
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_output = os.path.join(temp_dir, "temp.gif")
+        try:
+            # First load and verify the original video
+            video = VideoFileClip(input_path)
             
-            # Modify the binary search bounds
-            low_dim = self.MIN_DIMENSION  # Start from minimum dimension
-            high_dim = max(video.w, video.h)
+            # Verify video loaded correctly
+            if video is None or not hasattr(video, 'get_frame'):
+                raise Exception("Failed to load video file")
             
-            # Use analyzed dimension as starting point, but respect minimum
-            current_dim = max(
-                self.MIN_DIMENSION,
-                min(analysis['estimated_dimension'], high_dim)
-            )
-            last_too_big = None
-            last_too_small = None
+            # Verify we can read frames
+            try:
+                test_frame = video.get_frame(0)
+                if test_frame is None:
+                    raise Exception("Cannot read video frames")
+            except Exception as e:
+                raise Exception(f"Error reading video frames: {str(e)}")
             
-            # Store results to improve predictions
-            known_results = {}  # dimension -> size mapping
+            video.close()  # Close the initial test load
             
-            while True:
-                # Calculate width and height maintaining aspect ratio
-                if aspect_ratio > 1:
-                    current_width = current_dim
-                    current_height = int(current_dim / aspect_ratio)
-                else:
-                    current_height = current_dim
-                    current_width = int(current_dim * aspect_ratio)
-
-                print(f"Trying {current_width}x{current_height} at {fps}fps...")
+            # Now optimize the video
+            temp_mp4 = None
+            temp_dir = None
+            try:
+                temp_mp4, temp_dir = self._optimize_video(input_path)
                 
-                resized = video.resize((current_width, current_height))
-                success, size = self._safe_write_gif(resized, temp_output, fps)
-                resized.close()
+                # Load the optimized video for conversion
+                video = VideoFileClip(temp_mp4)
                 
-                if success:
-                    known_results[current_dim] = size
-                    print(f"Size: {size / (1024 * 1024):.2f}MB")
+                # Get video analysis and continue with conversion...
+                analysis = self._analyze_video(video)
+                print(f"Video Analysis:")
+                print(f"Duration: {analysis['duration']:.2f}s")
+                print(f"Frame count: {analysis['frame_count']}")
+                print(f"Bytes per pixel: {analysis['bytes_per_pixel']:.6f}")
+                print(f"Estimated optimal dimension: {analysis['estimated_dimension']}px")
+                
+                # Calculate initial dimensions maintaining aspect ratio
+                aspect_ratio = video.w / video.h
+                
+                # Start with conservative settings
+                fps = self.MIN_FPS
+                best_settings = None
+                best_size = 0
+                
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    temp_output = os.path.join(temp_dir, "temp.gif")
                     
-                    if self.TARGET_MIN_BYTES <= size <= self.TARGET_MAX_BYTES:
-                        best_settings = (current_width, current_height, fps)
-                        if os.path.exists(temp_output):
-                            try:
-                                shutil.copy2(temp_output, output_path)
-                            except Exception as e:
-                                raise Exception(f"Failed to copy file to destination: {str(e)}")
-                        break
-                    elif size < self.TARGET_MIN_BYTES:
-                        last_too_small = current_dim
-                        low_dim = current_dim
-                        best_settings = (current_width, current_height, fps)
-                        best_size = size
-                        
-                        if len(known_results) >= 2:
-                            # Use quadratic interpolation from known results
-                            dims = sorted(known_results.keys())
-                            sizes = [known_results[d] for d in dims]
-                            
-                            # Calculate size-to-dimension ratio for interpolation
-                            target_size = (self.TARGET_MIN_MB + self.TARGET_MAX_MB) / 2 * 1024 * 1024
-                            
-                            # Use the two closest points for quadratic estimation
-                            d1, d2 = dims[-2:]
-                            s1, s2 = sizes[-2:]
-                            
-                            # Calculate quadratic scaling factor
-                            scale_factor = math.sqrt(s2/s1) / (d2/d1)
-                            
-                            # Estimate next dimension
-                            size_ratio = target_size / size
-                            dim_ratio = math.pow(size_ratio, 1/(2 * scale_factor))
-                            current_dim = int(current_dim * dim_ratio)
+                    # Modify the binary search bounds
+                    low_dim = self.MIN_DIMENSION  # Start from minimum dimension
+                    high_dim = max(video.w, video.h)
+                    
+                    # Use analyzed dimension as starting point, but respect minimum
+                    current_dim = max(
+                        self.MIN_DIMENSION,
+                        min(analysis['estimated_dimension'], high_dim)
+                    )
+                    last_too_big = None
+                    last_too_small = None
+                    
+                    # Store results to improve predictions
+                    known_results = {}  # dimension -> size mapping
+                    
+                    while True:
+                        # Calculate width and height maintaining aspect ratio
+                        if aspect_ratio > 1:
+                            current_width = current_dim
+                            current_height = int(current_dim / aspect_ratio)
                         else:
-                            # First attempt - use simple ratio
-                            size_ratio = math.sqrt(self.TARGET_MIN_BYTES / size)
-                            current_dim = int(current_dim * size_ratio)
+                            current_height = current_dim
+                            current_width = int(current_dim * aspect_ratio)
+
+                        print(f"Trying {current_width}x{current_height} at {fps}fps...")
                         
-                        current_dim = min(current_dim, high_dim)
-                        if last_too_big is not None:
-                            current_dim = min(current_dim, last_too_big - 1)
-                            
-                    else:  # size > TARGET_MAX_BYTES
-                        last_too_big = current_dim
-                        high_dim = current_dim
+                        resized = video.resize((current_width, current_height))
+                        success, size = self._safe_write_gif(resized, temp_output, fps)
+                        resized.close()
                         
-                        if len(known_results) >= 2:
-                            # Similar quadratic interpolation for too-big case
-                            dims = sorted(known_results.keys())
-                            sizes = [known_results[d] for d in dims]
+                        if success:
+                            known_results[current_dim] = size
+                            print(f"Size: {size / (1024 * 1024):.2f}MB")
                             
-                            d1, d2 = dims[-2:]
-                            s1, s2 = sizes[-2:]
-                            scale_factor = math.sqrt(s2/s1) / (d2/d1)
-                            
-                            size_ratio = self.TARGET_MAX_BYTES / size
-                            dim_ratio = math.pow(size_ratio, 1/(2 * scale_factor))
-                            current_dim = int(current_dim * dim_ratio)
-                        else:
-                            size_ratio = math.sqrt(self.TARGET_MAX_BYTES / size)
-                            current_dim = int(current_dim * size_ratio)
-                        
-                        current_dim = max(current_dim, low_dim)
-                        if last_too_small is not None:
-                            current_dim = max(current_dim, last_too_small + 1)
+                            if self.TARGET_MIN_BYTES <= size <= self.TARGET_MAX_BYTES:
+                                best_settings = (current_width, current_height, fps)
+                                if os.path.exists(temp_output):
+                                    try:
+                                        shutil.copy2(temp_output, output_path)
+                                    except Exception as e:
+                                        raise Exception(f"Failed to copy file to destination: {str(e)}")
+                                break
+                            elif size < self.TARGET_MIN_BYTES:
+                                last_too_small = current_dim
+                                low_dim = current_dim
+                                best_settings = (current_width, current_height, fps)
+                                best_size = size
+                                
+                                if len(known_results) >= 2:
+                                    # Use quadratic interpolation from known results
+                                    dims = sorted(known_results.keys())
+                                    sizes = [known_results[d] for d in dims]
+                                    
+                                    # Calculate size-to-dimension ratio for interpolation
+                                    target_size = (self.TARGET_MIN_MB + self.TARGET_MAX_MB) / 2 * 1024 * 1024
+                                    
+                                    # Use the two closest points for quadratic estimation
+                                    d1, d2 = dims[-2:]
+                                    s1, s2 = sizes[-2:]
+                                    
+                                    # Calculate quadratic scaling factor
+                                    scale_factor = math.sqrt(s2/s1) / (d2/d1)
+                                    
+                                    # Estimate next dimension
+                                    size_ratio = target_size / size
+                                    dim_ratio = math.pow(size_ratio, 1/(2 * scale_factor))
+                                    current_dim = int(current_dim * dim_ratio)
+                                else:
+                                    # First attempt - use simple ratio
+                                    size_ratio = math.sqrt(self.TARGET_MIN_BYTES / size)
+                                    current_dim = int(current_dim * size_ratio)
+                                
+                                current_dim = min(current_dim, high_dim)
+                                if last_too_big is not None:
+                                    current_dim = min(current_dim, last_too_big - 1)
+                                
+                            else:  # size > TARGET_MAX_BYTES
+                                last_too_big = current_dim
+                                high_dim = current_dim
+                                
+                                if len(known_results) >= 2:
+                                    # Similar quadratic interpolation for too-big case
+                                    dims = sorted(known_results.keys())
+                                    sizes = [known_results[d] for d in dims]
+                                    
+                                    d1, d2 = dims[-2:]
+                                    s1, s2 = sizes[-2:]
+                                    scale_factor = math.sqrt(s2/s1) / (d2/d1)
+                                    
+                                    size_ratio = self.TARGET_MAX_BYTES / size
+                                    dim_ratio = math.pow(size_ratio, 1/(2 * scale_factor))
+                                    current_dim = int(current_dim * dim_ratio)
+                                else:
+                                    size_ratio = math.sqrt(self.TARGET_MAX_BYTES / size)
+                                    current_dim = int(current_dim * size_ratio)
+                                
+                                current_dim = max(current_dim, low_dim)
+                                if last_too_small is not None:
+                                    current_dim = max(current_dim, last_too_small + 1)
 
-                # Break if we can't find a better size
-                if last_too_big is not None and last_too_small is not None:
-                    if last_too_big - last_too_small <= 1:
-                        break
+                        # Break if we can't find a better size
+                        if last_too_big is not None and last_too_small is not None:
+                            if last_too_big - last_too_small <= 1:
+                                break
 
-                # Prevent infinite loop
-                if current_dim == last_too_small or current_dim == last_too_big:
-                    break
+                        # Prevent infinite loop
+                        if current_dim == last_too_small or current_dim == last_too_big:
+                            break
 
-        video.close()
+                video.close()
 
-        if not best_settings:
-            raise Exception("Could not create GIF with acceptable settings")
+                if not best_settings:
+                    raise Exception("Could not create GIF with acceptable settings")
 
-        width, height, fps = best_settings
-        if not os.path.exists(output_path):
-            # Create final GIF with best settings
-            resized = video.resize((width, height))
-            success, size = self._safe_write_gif(resized, output_path, fps)
-            resized.close()
-            if not success:
-                raise Exception("Failed to create final GIF")
+                width, height, fps = best_settings
+                if not os.path.exists(output_path):
+                    # Create final GIF with best settings
+                    resized = video.resize((width, height))
+                    success, size = self._safe_write_gif(resized, output_path, fps)
+                    resized.close()
+                    if not success:
+                        raise Exception("Failed to create final GIF")
 
-        final_size = os.path.getsize(output_path)
-        print(f"Final GIF: {width}x{height} at {fps}fps")
-        print(f"File size: {final_size / (1024 * 1024):.2f}MB")
+                final_size = os.path.getsize(output_path)
+                print(f"Final GIF: {width}x{height} at {fps}fps")
+                print(f"File size: {final_size / (1024 * 1024):.2f}MB")
 
-        return output_path
+                return output_path
+
+            except Exception as e:
+                # Add more specific error message
+                if '.mov' in input_path.lower():
+                    raise Exception("MOV file format error. Try converting to MP4 first or use a different format (MP4, AVI, WMV)")
+                else:
+                    raise Exception(f"Error loading video: {str(e)}")
+
+        except Exception as e:
+            raise Exception(f"Error in convert_to_gif: {str(e)}")
 
     def convert_to_thumbnail(self, input_path: str, output_path: str = None) -> str:
         """Convert video to thumbnail GIF (under 2MB)"""

@@ -41,4 +41,7 @@ Thumbs.db
 *.mov
 *.wmv
 *.gif
-!icons/*.png 
+!icons/*.png
+
+# IDE files
+*.code-workspace 
