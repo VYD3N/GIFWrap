@@ -44,4 +44,13 @@ Thumbs.db
 !icons/*.png
 
 # IDE files
-*.code-workspace 
+*.code-workspace
+
+# PyInstaller files
+*.spec
+*.manifest
+
+# Python files
+*.pyc
+*.pyo
+*.pyd 
