@@ -1,80 +1,74 @@
 # GIFWrap
 
-A simple and efficient tool for converting videos to optimized GIFs with specific size targets.
+A tool for converting videos to GIFs and generating AI videos using Luma Labs API.
 
-## Features
-
-- Convert videos to high-quality GIFs (15MB target)
-- Create thumbnail GIFs (2MB target)
-- Smart resolution optimization
-- User-friendly GUI interface
-- Maintains aspect ratio
-- Automatic frame rate optimization
-- Custom size targets (1-100 MB)
-
-## Installation
+## Setup
 
 1. Clone the repository:
-
-bash
-git clone https://github.com/VYD3N/GIFWrap.git
+```bash
+git clone https://github.com/yourusername/GIFWrap.git
+cd GIFWrap
+```
 
 2. Install dependencies:
-
-bash
+```bash
 pip install -r requirements.txt
+```
 
-## Usage
+3. Set up API keys:
+   - Copy `.env.example` to `.env`:
+     ```bash
+     cp .env.example .env
+     ```
+   - Get your Luma Labs API key:
+     1. Go to [Luma Labs Dashboard](https://lumalabs.ai/dashboard)
+     2. Sign up or log in
+     3. Find your API key in the dashboard
+     4. Remove the 'luma-' prefix if present
+     5. Add it to your `.env` file
 
-Run the application:
+   - Get your ImgBB API key:
+     1. Go to [ImgBB API](https://api.imgbb.com/)
+     2. Sign up or log in
+     3. Get your API key
+     4. Add it to your `.env` file
+
+4. Run the application:
 ```bash
 python GIFWrap.py
 ```
 
-1. Click "Browse" to select your input video
-2. Choose your output location
-3. Click either:
-   - "Create Full (15MB)" for full-size GIFs (outputs as filename_Sub15.gif)
-   - "Create Preview (2MB)" for smaller previews (outputs as filename_Sub2.gif)
-   - "Create Custom" with size between 1-100 MB (outputs as filename_SubX.gif)
+## Features
 
-The application will automatically optimize the resolution and frame rate to meet the target file size while maintaining quality.
+- Convert videos to GIFs with customizable settings
+- Generate AI videos using text prompts
+- Generate AI videos using keyframe images
+- Control video looping and aspect ratio
+- Support for both default and Ray-2 models
 
-## Features in Detail
+## Usage
 
-- **Smart Size Optimization**: Automatically calculates optimal dimensions and frame rate
-- **Quality Preservation**: Uses advanced analysis to maintain visual quality while meeting size targets
-- **Batch Processing**: Coming soon!
-- **Format Support**: Handles MP4, AVI, MOV, and WMV input formats
+### GIF Conversion
+1. Select input video
+2. Choose output location
+3. Select conversion options (size, FPS)
+4. Click convert
 
-## Requirements
-
-- Python 3.8+
-- moviepy
-- numpy
-- opencv-python
-- scikit-learn
-- imagehash
-- scipy
-- Pillow
-
-## Development
-
-This project uses several advanced techniques for optimal GIF conversion:
-- Color palette optimization
-- Edge complexity analysis
-- Motion pattern detection
-- Perceptual quality assessment
-
-## License
-
-MIT License
-
-## Credits
-
-Created by [VYD3N]
+### AI Video Generation
+1. Enter text prompt
+2. Select output directory
+3. Choose generation options:
+   - Loop video
+   - Aspect ratio (for text generation)
+   - Use Ray-2 model (optional)
+4. Add keyframe images (optional)
+5. Click generate
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+
+## License
+
+[MIT](https://choosealicense.com/licenses/mit/)
 

@@ -1,3 +1,6 @@
+# Environment variables
+.env
+
 # Python
 __pycache__/
 *.py[cod]
@@ -20,16 +23,31 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual Environment
-venv/
-ENV/
-env/
+# Documentation and backup files
+*.txt
+*.bak
+Luma API.txt
+Luma API.txt.bak
 
-# IDEs
+# Logs
+*.log
+luma_api_*.log
+
+# IDE
 .idea/
 .vscode/
 *.swp
 *.swo
+
+# Generated files
+output/
+*.gif
+*.mp4
+
+# Virtual Environment
+venv/
+ENV/
+env/
 
 # OS
 .DS_Store
@@ -53,4 +71,7 @@ Thumbs.db
 # Python files
 *.pyc
 *.pyo
-*.pyd 
+*.pyd
+
+# Utility scripts
+create_ico.py 
